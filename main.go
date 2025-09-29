@@ -30,7 +30,7 @@ func classPrompt(region string) string {
 
 // VisionClient interface for both Ollama and OpenAI clients
 type VisionClient interface {
-	Qualify(frame []byte) (int, error)
+	Qualify(frame []byte, minQuality uint) (int, error)
 	Classify(frame []byte, region string) (string, error)
 }
 
@@ -44,6 +44,7 @@ func main() {
 	openaiEndpoint := flag.String("openai-endpoint", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible endpoint URL (default from OPENAI_BASE_URL env var)")
 	openaiKey := flag.String("openai-key", os.Getenv("OPENAI_API_KEY"), "API key for OpenAI-compatible endpoint (default from OPENAI_API_KEY env var)")
 	region := flag.String("region", "Michigan", "region to mention in classification prompt")
+	minQuality := flag.Uint("min-quality", 3, "minimum quality threshold (1-5, images below this are moved to _lowq)")
 
 	flag.Parse()
 
@@ -87,7 +88,7 @@ func main() {
 	}
 
 	for _, e := range entries {
-		processEntry(*dir, e, client, *targetW, *region)
+		processEntry(*dir, e, client, *targetW, *region, *minQuality)
 	}
 }
 
@@ -112,7 +113,7 @@ func newOpenAIClient(endpoint, apiKey, model string) (*openaiClient, error) {
 }
 
 // Qualify implements VisionClient for ollamaClient
-func (o *ollamaClient) Qualify(frame []byte) (int, error) {
+func (o *ollamaClient) Qualify(frame []byte, minQuality uint) (int, error) {
 	var retv int
 	err := retry.Do(func() error {
 		err := o.client.Generate(
@@ -132,7 +133,7 @@ func (o *ollamaClient) Qualify(frame []byte) (int, error) {
 		if err != nil {
 			return err
 		}
-		if retv < 4 {
+		if retv < int(minQuality) {
 			return errTryQualityAgain
 		}
 		return nil
@@ -179,7 +180,7 @@ func (o *ollamaClient) Classify(frame []byte, region string) (string, error) {
 }
 
 // Qualify implements VisionClient for openaiClient
-func (o *openaiClient) Qualify(frame []byte) (int, error) {
+func (o *openaiClient) Qualify(frame []byte, minQuality uint) (int, error) {
 	var retv int
 	err := retry.Do(func() error {
 		base64Image := base64.StdEncoding.EncodeToString(frame)
@@ -216,7 +217,7 @@ func (o *openaiClient) Qualify(frame []byte) (int, error) {
 		if err != nil {
 			return err
 		}
-		if retv < 4 {
+		if retv < int(minQuality) {
 			return errTryQualityAgain
 		}
 		return nil
@@ -276,7 +277,7 @@ func (o *openaiClient) Classify(frame []byte, region string) (string, error) {
 	return retv, err
 }
 
-func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, region string) {
+func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, region string, minQuality uint) {
 	log.Printf("Processing '%s' ...", e.Name())
 	stat, err := e.Info()
 	if err != nil {
@@ -324,13 +325,13 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 			log.Fatalf("\tFailed to downscale image: %v", err)
 		}
 
-		frameQualityResult, err := client.Qualify(frame)
+		frameQualityResult, err := client.Qualify(frame, minQuality)
 		if err != nil {
 			log.Printf("\tVision quality query failed for '%s': %v", e.Name(), err)
 			return
 		}
 		qualityResult = max(qualityResult, frameQualityResult)
-		if frameQualityResult < 3 {
+		if frameQualityResult < int(minQuality) {
 			continue
 		}
 
@@ -347,8 +348,8 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 		}
 	}
 
-	if qualityResult < 3 {
-		log.Println("\tLow quality; moving to '_lowq'...")
+	if qualityResult < int(minQuality) {
+		log.Printf("\tLow quality (score: %d/%d); moving to '_lowq'...", qualityResult, minQuality)
 		if err := move(dir, e, "_lowq"); err != nil {
 			log.Fatalf("\t%v", err)
 		}
