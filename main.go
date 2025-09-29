@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,7 +39,8 @@ func main() {
 	model := flag.String("model", "llava:latest", "multimodal model to use")
 	targetW := flag.Uint("maxW", 1200, "max width for images")
 
-	// OpenAI-style endpoint configuration
+	// AI endpoint configuration
+	ollamaEndpoint := flag.String("ollama-endpoint", "", "Ollama endpoint URL (e.g., http://localhost:11434)")
 	openaiEndpoint := flag.String("openai-endpoint", "", "OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)")
 	openaiKey := flag.String("openai-key", "", "API key for OpenAI-compatible endpoint")
 	region := flag.String("region", "Michigan", "region to mention in classification prompt")
@@ -60,9 +63,20 @@ func main() {
 		}
 	} else {
 		// Use Ollama
-		oll, err := ollapi.ClientFromEnvironment()
-		if err != nil {
-			log.Fatalf("Failed to create Ollama client: %v", err)
+		var oll *ollapi.Client
+		if *ollamaEndpoint != "" {
+			// Use custom Ollama endpoint
+			parsedURL, err := url.Parse(*ollamaEndpoint)
+			if err != nil {
+				log.Fatalf("Failed to parse Ollama endpoint URL: %v", err)
+			}
+			oll = ollapi.NewClient(parsedURL, http.DefaultClient)
+		} else {
+			// Use default Ollama from environment
+			oll, err = ollapi.ClientFromEnvironment()
+			if err != nil {
+				log.Fatalf("Failed to create Ollama client: %v", err)
+			}
 		}
 		client = &ollamaClient{client: oll, model: *model}
 	}
