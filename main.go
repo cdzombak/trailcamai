@@ -40,9 +40,9 @@ func main() {
 	targetW := flag.Uint("maxW", 1200, "max width for images")
 
 	// AI endpoint configuration
-	ollamaEndpoint := flag.String("ollama-endpoint", "", "Ollama endpoint URL (e.g., http://localhost:11434)")
-	openaiEndpoint := flag.String("openai-endpoint", "", "OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)")
-	openaiKey := flag.String("openai-key", "", "API key for OpenAI-compatible endpoint")
+	ollamaEndpoint := flag.String("ollama-endpoint", os.Getenv("OLLAMA_HOST"), "Ollama endpoint URL (default from OLLAMA_HOST env var or http://localhost:11434)")
+	openaiEndpoint := flag.String("openai-endpoint", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible endpoint URL (default from OPENAI_BASE_URL env var)")
+	openaiKey := flag.String("openai-key", os.Getenv("OPENAI_API_KEY"), "API key for OpenAI-compatible endpoint (default from OPENAI_API_KEY env var)")
 	region := flag.String("region", "Michigan", "region to mention in classification prompt")
 
 	flag.Parse()
@@ -65,14 +65,14 @@ func main() {
 		// Use Ollama
 		var oll *ollapi.Client
 		if *ollamaEndpoint != "" {
-			// Use custom Ollama endpoint
+			// Use specified or environment-provided Ollama endpoint
 			parsedURL, err := url.Parse(*ollamaEndpoint)
 			if err != nil {
 				log.Fatalf("Failed to parse Ollama endpoint URL: %v", err)
 			}
 			oll = ollapi.NewClient(parsedURL, http.DefaultClient)
 		} else {
-			// Use default Ollama from environment
+			// Use default Ollama client (will use OLLAMA_HOST if set, or localhost:11434)
 			oll, err = ollapi.ClientFromEnvironment()
 			if err != nil {
 				log.Fatalf("Failed to create Ollama client: %v", err)
