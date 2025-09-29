@@ -349,7 +349,7 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 	}
 
 	if qualityResult < int(minQuality) {
-		log.Printf("\tLow quality (score: %d/%d); moving to '_lowq'...", qualityResult, minQuality)
+		log.Printf("\tLow quality (score: %d/5, threshold: %d); moving to '_lowq'...", qualityResult, minQuality)
 		if err := move(dir, e, "_lowq"); err != nil {
 			log.Fatalf("\t%v", err)
 		}
