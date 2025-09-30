@@ -100,7 +100,7 @@ jobs:
 
   binaries:
     name: Binaries & Debian Packages
-    needs: [lint, meta]
+    needs: [meta]
     if: needs.meta.outputs.is_running_version_tag_update != 'true'
     runs-on: ubuntu-latest
 
@@ -142,7 +142,7 @@ jobs:
 
   release:
     name: GitHub (Pre)Release
-    needs: [meta, binaries]
+    needs: [meta, binaries, lint]
     if: >-
       needs.meta.outputs.is_release == 'true' ||
       needs.meta.outputs.is_prerelease == 'true'
@@ -186,7 +186,7 @@ jobs:
 
   aptly:
     name: Aptly
-    needs: [meta, binaries]
+    needs: [meta, binaries, lint]
     if: needs.meta.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     steps:
