@@ -137,7 +137,7 @@ func (o *ollamaClient) Qualify(frame []byte, minQuality uint) (int, error) {
 			return errTryQualityAgain
 		}
 		return nil
-	}, retry.Attempts(3), retry.Delay(50*time.Millisecond))
+	}, retry.Attempts(2), retry.Delay(50*time.Millisecond))
 	if errwrap.ContainsType(err, errTryQualityAgain) {
 		err = nil
 	}
@@ -221,7 +221,7 @@ func (o *openaiClient) Qualify(frame []byte, minQuality uint) (int, error) {
 			return errTryQualityAgain
 		}
 		return nil
-	}, retry.Attempts(3), retry.Delay(50*time.Millisecond))
+	}, retry.Attempts(2), retry.Delay(50*time.Millisecond))
 	if errwrap.ContainsType(err, errTryQualityAgain) {
 		err = nil
 	}
