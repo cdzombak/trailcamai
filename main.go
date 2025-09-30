@@ -295,14 +295,15 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 	var isVideo bool
 
 	// Handle different file types
-	if fExt == ".jpg" || fExt == ".jpeg" {
+	switch fExt {
+	case ".jpg", ".jpeg":
 		content, err := os.ReadFile(fName)
 		if err != nil {
 			log.Fatalf("\tFailed to read file '%s': %v", e.Name(), err)
 		}
 		frames = append(frames, content)
 		isVideo = false
-	} else if fExt == ".mp4" || fExt == ".avi" || fExt == ".mov" || fExt == ".mkv" || fExt == ".webm" {
+	case ".mp4", ".avi", ".mov", ".mkv", ".webm":
 		// Extract frames from video
 		videoFrames, err := ExtractFramesFromVideo(fName)
 		if err != nil {
@@ -311,7 +312,7 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 		}
 		frames = videoFrames
 		isVideo = true
-	} else {
+	default:
 		log.Printf("\tFile type '%s'; skipping", fExt)
 		return
 	}
