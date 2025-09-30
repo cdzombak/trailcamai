@@ -24,6 +24,8 @@ import (
 
 const qualityPrompt = "This is a still image from an outdoor trail camera. Rate its image quality on a scale of 1-5 (5 is the best), especially considering motion blur and clarity of the subject. Your response MUST be a single number."
 
+var version = "<dev>"
+
 func classPrompt(region string) string {
 	return fmt.Sprintf("This is an image frame from an outdoor trail camera in %s. If the image shows an animal, identify what kind of animal it is. Your response MUST be a single word. If there is no animal, reply with \"none\". If there is an animal but you can't guess what it is, reply \"unknown\".", region)
 }
@@ -37,16 +39,20 @@ type VisionClient interface {
 func main() {
 	dir := flag.String("dir", "", "directory of images/videos to sort")
 	model := flag.String("model", "llava:latest", "multimodal model to use")
-	targetW := flag.Uint("maxW", 1200, "max width for images")
-
-	// AI endpoint configuration
+	targetW := flag.Uint("maxW", 1200, "max image width that will be passed to the LLM")
 	ollamaEndpoint := flag.String("ollama-endpoint", os.Getenv("OLLAMA_HOST"), "Ollama endpoint URL (default from OLLAMA_HOST env var or http://localhost:11434)")
 	openaiEndpoint := flag.String("openai-endpoint", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible endpoint URL (default from OPENAI_BASE_URL env var)")
 	openaiKey := flag.String("openai-key", os.Getenv("OPENAI_API_KEY"), "API key for OpenAI-compatible endpoint (default from OPENAI_API_KEY env var)")
 	region := flag.String("region", "Michigan", "region to mention in classification prompt")
 	minQuality := flag.Uint("min-quality", 3, "minimum quality threshold (1-5, images below this are moved to _lowq)")
+	printVersion := flag.Bool("version", false, "print version and exit")
 
 	flag.Parse()
+
+	if *printVersion {
+		fmt.Printf("trailcamai %s\n", version)
+		return
+	}
 
 	if *dir == "" {
 		flag.PrintDefaults()
