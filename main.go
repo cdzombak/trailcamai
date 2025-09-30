@@ -158,7 +158,7 @@ func (o *ollamaClient) Classify(frame []byte, region string) (string, error) {
 				Images:    []ollapi.ImageData{frame},
 			},
 			func(resp ollapi.GenerateResponse) error {
-				retv = strings.ToLower(strings.TrimSpace(resp.Response))
+				retv = strings.ToLower(cleanClassificationResponse(resp.Response))
 				return nil
 			},
 		)
@@ -262,7 +262,7 @@ func (o *openaiClient) Classify(frame []byte, region string) (string, error) {
 		if len(resp.Choices) == 0 {
 			return errors.New("no response from OpenAI")
 		}
-		retv = strings.ToLower(strings.TrimSpace(resp.Choices[0].Message.Content))
+		retv = strings.ToLower(cleanClassificationResponse(resp.Choices[0].Message.Content))
 		if len(strings.Split(retv, " ")) > 1 {
 			return errTryClassifyingAgain
 		}
@@ -429,6 +429,30 @@ func hardlinkToMultipleDirectories(fromDir string, e os.DirEntry, animals []stri
 
 var errTryQualityAgain = errors.New("got low quality; try again")
 var errTryClassifyingAgain = errors.New("got unknown or none; try classifying again")
+
+// cleanClassificationResponse removes trailing periods and surrounding quotes from LLM responses
+func cleanClassificationResponse(s string) string {
+	s = strings.TrimSpace(s)
+	// Remove surrounding quotes (including curly quotes)
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') ||
+			(s[0:3] == "\u201c" && s[len(s)-3:] == "\u201d") || // curly double quotes
+			(s[0:3] == "\u2018" && s[len(s)-3:] == "\u2019") { // curly single quotes
+			// Handle ASCII quotes
+			if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+				s = s[1 : len(s)-1]
+			} else {
+				// Handle curly quotes (3 bytes each in UTF-8)
+				s = s[3 : len(s)-3]
+			}
+			s = strings.TrimSpace(s)
+		}
+	}
+	// Remove trailing period
+	s = strings.TrimSuffix(s, ".")
+	return s
+}
 
 func move(fromDir string, e os.DirEntry, toDir string) error {
 	destDir := filepath.Join(fromDir, toDir)

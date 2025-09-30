@@ -98,6 +98,19 @@ jobs:
     - name: Run actionlint
       uses: raven-actions/actionlint@v2
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Run tests
+        run: make test
+
   binaries:
     name: Binaries & Debian Packages
     needs: [meta]
@@ -142,7 +155,7 @@ jobs:
 
   release:
     name: GitHub (Pre)Release
-    needs: [meta, binaries, lint]
+    needs: [meta, binaries, lint, test]
     if: >-
       needs.meta.outputs.is_release == 'true' ||
       needs.meta.outputs.is_prerelease == 'true'
@@ -186,7 +199,7 @@ jobs:
 
   aptly:
     name: Aptly
-    needs: [meta, binaries, lint]
+    needs: [meta, binaries, lint, test]
     if: needs.meta.outputs.is_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -257,7 +270,7 @@ jobs:
     name: Ntfy
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    needs: [meta, lint, binaries, release, aptly, homebrew]
+    needs: [meta, lint, test, binaries, release, aptly, homebrew]
     steps:
       - name: Send success notification
         uses: niniyas/ntfy-action@master
