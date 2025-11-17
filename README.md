@@ -38,6 +38,7 @@ trailcamai [options] -dir /path/to/trail/camera/files
 - `-min-quality`: Quality threshold 1-5; files under this threshold go to `_lowq/` (default: `3`)
 - `-region`: Geographic region for classification context (default: `Michigan`)
 - `-maxW`: Maximum image width sent to the LLM (default: `1200`)
+- `-concurrency`: Number of files to process simultaneously (default: `1`)
 - `-ollama-endpoint`: Ollama endpoint URL
 - `-openai-endpoint`: OpenAI-compatible endpoint URL
 - `-openai-key`: API key for OpenAI-compatible endpoint
