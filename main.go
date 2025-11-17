@@ -27,13 +27,13 @@ const qualityPrompt = "This is a still image from an outdoor trail camera. Rate 
 var version = "<dev>"
 
 func classPrompt(region string) string {
-	return fmt.Sprintf("This is an image frame from an outdoor trail camera in %s. If the image shows an animal, identify what kind of animal it is. Your response MUST be a single word. If there is no animal, reply with \"none\". If there is an animal but you can't guess what it is, reply \"unknown\".", region)
+	return fmt.Sprintf("This is an image frame from an outdoor trail camera in %s. If the image shows animals, reply with a comma-separated list of the animals you see (one single-word, lowercase name per animal, e.g. \"deer, raccoon\"). If there is no animal, reply with \"none\". If there is an animal but you can't guess what it is, reply \"unknown\".", region)
 }
 
 // VisionClient interface for both Ollama and OpenAI clients
 type VisionClient interface {
 	Qualify(frame []byte, minQuality uint) (int, error)
-	Classify(frame []byte, region string) (string, error)
+	Classify(frame []byte, region string) ([]string, error)
 }
 
 func main() {
@@ -151,9 +151,10 @@ func (o *ollamaClient) Qualify(frame []byte, minQuality uint) (int, error) {
 }
 
 // Classify implements VisionClient for ollamaClient
-func (o *ollamaClient) Classify(frame []byte, region string) (string, error) {
-	var retv string
+func (o *ollamaClient) Classify(frame []byte, region string) ([]string, error) {
+	var retv []string
 	err := retry.Do(func() error {
+		var response string
 		err := o.client.Generate(
 			context.Background(),
 			&ollapi.GenerateRequest{
@@ -164,17 +165,15 @@ func (o *ollamaClient) Classify(frame []byte, region string) (string, error) {
 				Images:    []ollapi.ImageData{frame},
 			},
 			func(resp ollapi.GenerateResponse) error {
-				retv = strings.ToLower(cleanClassificationResponse(resp.Response))
+				response = resp.Response
 				return nil
 			},
 		)
 		if err != nil {
 			return err
 		}
-		if len(strings.Split(retv, " ")) > 1 {
-			return errTryClassifyingAgain
-		}
-		if retv == "unknown" || retv == "none" {
+		retv = parseAnimalList(response)
+		if len(retv) == 0 {
 			return errTryClassifyingAgain
 		}
 		return nil
@@ -235,8 +234,8 @@ func (o *openaiClient) Qualify(frame []byte, minQuality uint) (int, error) {
 }
 
 // Classify implements VisionClient for openaiClient
-func (o *openaiClient) Classify(frame []byte, region string) (string, error) {
-	var retv string
+func (o *openaiClient) Classify(frame []byte, region string) ([]string, error) {
+	var retv []string
 	err := retry.Do(func() error {
 		base64Image := base64.StdEncoding.EncodeToString(frame)
 		resp, err := o.client.CreateChatCompletion(
@@ -268,11 +267,8 @@ func (o *openaiClient) Classify(frame []byte, region string) (string, error) {
 		if len(resp.Choices) == 0 {
 			return errors.New("no response from OpenAI")
 		}
-		retv = strings.ToLower(cleanClassificationResponse(resp.Choices[0].Message.Content))
-		if len(strings.Split(retv, " ")) > 1 {
-			return errTryClassifyingAgain
-		}
-		if retv == "unknown" || retv == "none" {
+		retv = parseAnimalList(resp.Choices[0].Message.Content)
+		if len(retv) == 0 {
 			return errTryClassifyingAgain
 		}
 		return nil
@@ -298,7 +294,6 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 	fName := filepath.Join(dir, e.Name())
 	fExt := strings.ToLower(filepath.Ext(e.Name()))
 	var frames [][]byte
-	var isVideo bool
 
 	// Handle different file types
 	switch fExt {
@@ -308,7 +303,6 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 			log.Fatalf("\tFailed to read file '%s': %v", e.Name(), err)
 		}
 		frames = append(frames, content)
-		isVideo = false
 	case ".mp4", ".avi", ".mov", ".mkv", ".webm":
 		// Extract frames from video
 		videoFrames, err := ExtractFramesFromVideo(fName)
@@ -317,7 +311,6 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 			return
 		}
 		frames = videoFrames
-		isVideo = true
 	default:
 		log.Printf("\tFile type '%s'; skipping", fExt)
 		return
@@ -342,16 +335,15 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 			continue
 		}
 
-		frameClassResult, err := client.Classify(frame, region)
+		frameAnimals, err := client.Classify(frame, region)
 		if err != nil {
 			log.Printf("\tVision classification query failed for '%s': %v", e.Name(), err)
 			return
 		}
 
-		// Add detected animal to our set (excluding none/unknown)
-		if frameClassResult != "" && frameClassResult != "none" && frameClassResult != "unknown" {
-			detectedAnimals[frameClassResult] = true
-			log.Printf("\tDetected in frame: %s", frameClassResult)
+		for _, animal := range frameAnimals {
+			detectedAnimals[animal] = true
+			log.Printf("\tDetected in frame: %s", animal)
 		}
 	}
 
@@ -379,20 +371,10 @@ func processEntry(dir string, e os.DirEntry, client VisionClient, targetW uint, 
 		}
 	} else {
 		// Multiple animals detected - hardlink to multiple directories
-		log.Printf("\tMultiple animals detected: %v", getKeys(detectedAnimals))
-		if isVideo {
-			if err := hardlinkToMultipleDirectories(dir, e, getKeys(detectedAnimals)); err != nil {
-				log.Fatalf("\t%v", err)
-			}
-		} else {
-			// For images, just pick the first one (existing behavior)
-			for animal := range detectedAnimals {
-				log.Printf("\tUsing first detection: %s", animal)
-				if err := move(dir, e, animal); err != nil {
-					log.Fatalf("\t%v", err)
-				}
-				break
-			}
+		animals := getKeys(detectedAnimals)
+		log.Printf("\tMultiple animals detected: %v", animals)
+		if err := hardlinkToMultipleDirectories(dir, e, animals); err != nil {
+			log.Fatalf("\t%v", err)
 		}
 	}
 }
@@ -435,6 +417,33 @@ func hardlinkToMultipleDirectories(fromDir string, e os.DirEntry, animals []stri
 
 var errTryQualityAgain = errors.New("got low quality; try again")
 var errTryClassifyingAgain = errors.New("got unknown or none; try classifying again")
+
+// parseAnimalList converts a classification response into a normalized list of animals
+func parseAnimalList(resp string) []string {
+	cleaned := strings.ToLower(cleanClassificationResponse(resp))
+	if cleaned == "" {
+		return nil
+	}
+
+	// Encourage comma-separated responses, but be tolerant by replacing " and " with commas.
+	cleaned = strings.ReplaceAll(cleaned, " and ", ",")
+
+	raw := strings.Split(cleaned, ",")
+	animals := make([]string, 0, len(raw))
+	seen := make(map[string]struct{})
+	for _, item := range raw {
+		animal := strings.TrimSpace(item)
+		if animal == "" || animal == "none" || animal == "unknown" {
+			continue
+		}
+		if _, ok := seen[animal]; ok {
+			continue
+		}
+		seen[animal] = struct{}{}
+		animals = append(animals, animal)
+	}
+	return animals
+}
 
 // cleanClassificationResponse removes trailing periods and surrounding quotes from LLM responses
 func cleanClassificationResponse(s string) string {
