@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/avast/retry-go"
@@ -40,6 +41,7 @@ func main() {
 	dir := flag.String("dir", "", "directory of images/videos to sort")
 	model := flag.String("model", "llava:latest", "multimodal model to use")
 	targetW := flag.Uint("maxW", 1200, "max image width that will be passed to the LLM")
+	concurrency := flag.Int("concurrency", 1, "number of files to process concurrently")
 	ollamaEndpoint := flag.String("ollama-endpoint", os.Getenv("OLLAMA_HOST"), "Ollama endpoint URL (default from OLLAMA_HOST env var or http://localhost:11434)")
 	openaiEndpoint := flag.String("openai-endpoint", os.Getenv("OPENAI_BASE_URL"), "OpenAI-compatible endpoint URL (default from OPENAI_BASE_URL env var)")
 	openaiKey := flag.String("openai-key", os.Getenv("OPENAI_API_KEY"), "API key for OpenAI-compatible endpoint (default from OPENAI_API_KEY env var)")
@@ -93,9 +95,29 @@ func main() {
 		log.Fatalf("Failed to read directory '%s': %v", *dir, err)
 	}
 
-	for _, e := range entries {
-		processEntry(*dir, e, client, *targetW, *region, *minQuality)
+	if *concurrency < 1 {
+		log.Printf("Invalid concurrency %d; defaulting to 1", *concurrency)
+		*concurrency = 1
 	}
+
+	jobCh := make(chan os.DirEntry)
+	var wg sync.WaitGroup
+
+	for i := 0; i < *concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range jobCh {
+				processEntry(*dir, e, client, *targetW, *region, *minQuality)
+			}
+		}()
+	}
+
+	for _, e := range entries {
+		jobCh <- e
+	}
+	close(jobCh)
+	wg.Wait()
 }
 
 // ollamaClient implements VisionClient for Ollama
