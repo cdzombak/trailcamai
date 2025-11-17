@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	"os"
 
 	"github.com/nfnt/resize"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
@@ -71,17 +70,18 @@ func ExtractFramesFromVideo(videoPath string) ([][]byte, error) {
 	var frames [][]byte
 	for _, pos := range positions {
 		buf := bytes.NewBuffer(nil)
+		errBuf := bytes.NewBuffer(nil)
 		err := ffmpeg.Input(videoPath, ffmpeg.KwArgs{"ss": pos}).
 			Output("pipe:", ffmpeg.KwArgs{
 				"vframes": 1,
 				"format":  "image2",
 				"vcodec":  "mjpeg",
 			}).
-			WithOutput(buf, os.Stderr).
+			WithOutput(buf, errBuf).
 			Silent(true).
 			Run()
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract frame at position %f: %w", pos, err)
+			return nil, fmt.Errorf("failed to extract frame at position %f: %w (stderr: %s)", pos, err, errBuf.String())
 		}
 		frames = append(frames, buf.Bytes())
 	}
